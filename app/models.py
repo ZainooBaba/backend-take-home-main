@@ -55,6 +55,29 @@ class Ranger(Base):
     )
 
 
+class Campaign(Base):
+    __tablename__ = "campaigns"
+
+    name: Mapped[str]
+    description: Mapped[str] = mapped_column(Text)
+    region: Mapped[str]
+    start_date: Mapped[datetime]
+    end_date: Mapped[datetime]
+    created_by: Mapped[str] = mapped_column(ForeignKey("rangers.id"))
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+    id: Mapped[str] = mapped_column(
+        primary_key=True, init=False, default_factory=generate_uuid, insert_default=generate_uuid,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        init=False, default_factory=datetime.utcnow, insert_default=datetime.utcnow,
+    )
+
+    __table_args__ = (
+        Index("ix_campaign_status", "status"),
+        Index("ix_campaign_region", "region"),
+    )
+
+
 class Sighting(Base):
     __tablename__ = "sightings"
 
@@ -72,6 +95,7 @@ class Sighting(Base):
     latitude: Mapped[Optional[float]] = mapped_column(default=None)
     longitude: Mapped[Optional[float]] = mapped_column(default=None)
     is_confirmed: Mapped[bool] = mapped_column(default=False)
+    campaign_id: Mapped[Optional[str]] = mapped_column(ForeignKey("campaigns.id"), default=None)
     id: Mapped[str] = mapped_column(
         primary_key=True, init=False, default_factory=generate_uuid, insert_default=generate_uuid,
     )
@@ -83,6 +107,7 @@ class Sighting(Base):
         Index("ix_sighting_date", "date"),
         Index("ix_sighting_weather", "weather"),
         Index("ix_sighting_time_of_day", "time_of_day"),
+        Index("ix_sighting_campaign_id", "campaign_id"),
         Index("ix_sighting_region_pokemon", "region", "pokemon_id"),
         Index("ix_sighting_region_date", "region", "date"),
     )

@@ -3,6 +3,51 @@ from datetime import datetime
 from typing import Literal, Optional
 
 
+# --- Campaign ---
+
+class CampaignCreate(BaseModel):
+    name: str
+    description: str
+    region: str
+    start_date: datetime
+    end_date: datetime
+
+
+class CampaignUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    region: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+
+class CampaignTransition(BaseModel):
+    status: Literal["active", "completed", "archived"]
+
+
+class CampaignResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    description: str
+    region: str
+    start_date: datetime
+    end_date: datetime
+    status: str
+    created_by: str
+    created_at: datetime
+
+
+class CampaignSummaryResponse(BaseModel):
+    campaign_id: str
+    total_sightings: int
+    unique_species: int
+    contributing_rangers: int
+    earliest_sighting: Optional[datetime]
+    latest_sighting: Optional[datetime]
+
+
 # --- Trainer ---
 
 class TrainerCreate(BaseModel):
@@ -87,6 +132,7 @@ class SightingCreate(BaseModel):
     notes: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    campaign_id: Optional[str] = None
 
 
 class SightingResponse(BaseModel):
@@ -105,6 +151,7 @@ class SightingResponse(BaseModel):
     is_shiny: bool
     notes: Optional[str]
     is_confirmed: bool
+    campaign_id: Optional[str] = None
     pokemon_name: Optional[str] = None
     ranger_name: Optional[str] = None
 
