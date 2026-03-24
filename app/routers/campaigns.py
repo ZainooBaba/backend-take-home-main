@@ -57,6 +57,12 @@ def update_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
+    if campaign.status in ("completed", "archived"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Campaign is {campaign.status} — only status transitions are allowed",
+        )
+
     for field, value in updates.model_dump(exclude_none=True).items():
         setattr(campaign, field, value)
 
