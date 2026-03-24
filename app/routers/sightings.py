@@ -170,7 +170,6 @@ def confirm_sighting(
     if sighting.is_confirmed:
         raise HTTPException(status_code=409, detail="Sighting has already been confirmed")
 
-    sighting.is_confirmed = True
     sighting.confirmed_by = ranger.id
     sighting.confirmed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()

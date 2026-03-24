@@ -7,6 +7,7 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -109,9 +110,18 @@ class Sighting(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text, default=None)
     latitude: Mapped[Optional[float]] = mapped_column(default=None)
     longitude: Mapped[Optional[float]] = mapped_column(default=None)
-    is_confirmed: Mapped[bool] = mapped_column(default=False)
     confirmed_by: Mapped[Optional[str]] = mapped_column(ForeignKey("rangers.id"), default=None)
     confirmed_at: Mapped[Optional[datetime]] = mapped_column(default=None)
+
+    @hybrid_property
+    def is_confirmed(self) -> bool:
+        """A sighting is confirmed when a peer ranger has set confirmed_by."""
+        return self.confirmed_by is not None
+
+    @is_confirmed.inplace.expression
+    @classmethod
+    def _is_confirmed_expr(cls):
+        return cls.confirmed_by.isnot(None)
     campaign_id: Mapped[Optional[str]] = mapped_column(ForeignKey("campaigns.id"), default=None)
     id: Mapped[str] = mapped_column(
         primary_key=True, init=False, default_factory=generate_uuid, insert_default=generate_uuid,
