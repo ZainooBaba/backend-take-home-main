@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Header, Query, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import Integer, func
 from typing import Optional, Any
 from datetime import datetime
 
@@ -13,6 +13,8 @@ from app.schemas import (
     CampaignTransition,
     CampaignUpdate,
     ConfirmationResponse,
+    RegionalSummaryResponse,
+    TopEntry,
     TrainerCreate,
     TrainerResponse,
     RangerCreate,
@@ -445,6 +447,77 @@ def delete_sighting(
     db.delete(sighting)
     db.commit()
     return MessageResponse(detail="Sighting deleted")
+
+
+# ---------- Regions ----------
+
+@app.get("/regions/{region_name}/summary", response_model=RegionalSummaryResponse)
+def get_regional_summary(region_name: str, db: Session = Depends(get_db)):
+    # Totals in a single pass
+    totals = db.query(
+        func.count(Sighting.id),
+        func.sum(Sighting.is_confirmed.cast(Integer)),
+        func.count(Sighting.pokemon_id.distinct()),
+    ).filter(Sighting.region == region_name).one()
+
+    total_sightings, confirmed_count, unique_species = totals
+    total_sightings = total_sightings or 0
+    confirmed_count = confirmed_count or 0
+    unique_species = unique_species or 0
+
+    # Top 5 Pokémon by sighting count
+    top_poke_rows = (
+        db.query(Pokemon.id, Pokemon.name, func.count(Sighting.id).label("cnt"))
+        .join(Sighting, Sighting.pokemon_id == Pokemon.id)
+        .filter(Sighting.region == region_name)
+        .group_by(Pokemon.id, Pokemon.name)
+        .order_by(func.count(Sighting.id).desc())
+        .limit(5)
+        .all()
+    )
+    top_pokemon = [TopEntry(id=r.id, name=r.name, count=r.cnt) for r in top_poke_rows]
+
+    # Top 5 rangers by sighting count
+    top_ranger_rows = (
+        db.query(Ranger.id, Ranger.name, func.count(Sighting.id).label("cnt"))
+        .join(Sighting, Sighting.ranger_id == Ranger.id)
+        .filter(Sighting.region == region_name)
+        .group_by(Ranger.id, Ranger.name)
+        .order_by(func.count(Sighting.id).desc())
+        .limit(5)
+        .all()
+    )
+    top_rangers = [TopEntry(id=r.id, name=r.name, count=r.cnt) for r in top_ranger_rows]
+
+    # Weather breakdown
+    weather_rows = (
+        db.query(Sighting.weather, func.count(Sighting.id))
+        .filter(Sighting.region == region_name)
+        .group_by(Sighting.weather)
+        .all()
+    )
+    by_weather = {w: c for w, c in weather_rows}
+
+    # Time-of-day breakdown
+    tod_rows = (
+        db.query(Sighting.time_of_day, func.count(Sighting.id))
+        .filter(Sighting.region == region_name)
+        .group_by(Sighting.time_of_day)
+        .all()
+    )
+    by_time_of_day = {t: c for t, c in tod_rows}
+
+    return RegionalSummaryResponse(
+        region=region_name,
+        total_sightings=total_sightings,
+        confirmed_sightings=confirmed_count,
+        unconfirmed_sightings=total_sightings - confirmed_count,
+        unique_species=unique_species,
+        top_pokemon=top_pokemon,
+        top_rangers=top_rangers,
+        by_weather=by_weather,
+        by_time_of_day=by_time_of_day,
+    )
 
 
 @app.post("/sightings/{sighting_id}/confirm", response_model=SightingResponse)

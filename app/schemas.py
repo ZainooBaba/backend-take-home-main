@@ -48,6 +48,26 @@ class CampaignSummaryResponse(BaseModel):
     latest_sighting: Optional[datetime]
 
 
+# --- Regional Summary ---
+
+class TopEntry(BaseModel):
+    id: str | int
+    name: str
+    count: int
+
+
+class RegionalSummaryResponse(BaseModel):
+    region: str
+    total_sightings: int
+    confirmed_sightings: int
+    unconfirmed_sightings: int
+    unique_species: int
+    top_pokemon: list[TopEntry]
+    top_rangers: list[TopEntry]
+    by_weather: dict[str, int]
+    by_time_of_day: dict[str, int]
+
+
 # --- Confirmation ---
 
 class ConfirmationResponse(BaseModel):
