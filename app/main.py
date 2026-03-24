@@ -12,6 +12,7 @@ from app.schemas import (
     CampaignSummaryResponse,
     CampaignTransition,
     CampaignUpdate,
+    ConfirmationResponse,
     TrainerCreate,
     TrainerResponse,
     RangerCreate,
@@ -444,3 +445,52 @@ def delete_sighting(
     db.delete(sighting)
     db.commit()
     return MessageResponse(detail="Sighting deleted")
+
+
+@app.post("/sightings/{sighting_id}/confirm", response_model=SightingResponse)
+def confirm_sighting(
+    sighting_id: str,
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="X-User-ID header is required")
+
+    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
+    if not ranger:
+        raise HTTPException(status_code=403, detail="Only rangers can confirm sightings")
+
+    sighting = db.query(Sighting).filter(Sighting.id == sighting_id).first()
+    if not sighting:
+        raise HTTPException(status_code=404, detail="Sighting not found")
+
+    if sighting.ranger_id == x_user_id:
+        raise HTTPException(status_code=403, detail="You cannot confirm your own sighting")
+
+    if sighting.is_confirmed:
+        raise HTTPException(status_code=409, detail="Sighting has already been confirmed")
+
+    sighting.is_confirmed = True
+    sighting.confirmed_by = x_user_id
+    sighting.confirmed_at = datetime.utcnow()
+    db.commit()
+    db.refresh(sighting)
+
+    pokemon = db.query(Pokemon).filter(Pokemon.id == sighting.pokemon_id).first()
+    reporter = db.query(Ranger).filter(Ranger.id == sighting.ranger_id).first()
+    return _enrich_sighting(sighting, pokemon, reporter)
+
+
+@app.get("/sightings/{sighting_id}/confirmation", response_model=ConfirmationResponse)
+def get_confirmation(sighting_id: str, db: Session = Depends(get_db)):
+    sighting = db.query(Sighting).filter(Sighting.id == sighting_id).first()
+    if not sighting:
+        raise HTTPException(status_code=404, detail="Sighting not found")
+    if not sighting.is_confirmed:
+        raise HTTPException(status_code=404, detail="Sighting has not been confirmed")
+
+    return ConfirmationResponse(
+        sighting_id=sighting_id,
+        confirmed_by=sighting.confirmed_by,
+        confirmed_at=sighting.confirmed_at,
+    )

@@ -95,6 +95,8 @@ class Sighting(Base):
     latitude: Mapped[Optional[float]] = mapped_column(default=None)
     longitude: Mapped[Optional[float]] = mapped_column(default=None)
     is_confirmed: Mapped[bool] = mapped_column(default=False)
+    confirmed_by: Mapped[Optional[str]] = mapped_column(ForeignKey("rangers.id"), default=None)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(default=None)
     campaign_id: Mapped[Optional[str]] = mapped_column(ForeignKey("campaigns.id"), default=None)
     id: Mapped[str] = mapped_column(
         primary_key=True, init=False, default_factory=generate_uuid, insert_default=generate_uuid,

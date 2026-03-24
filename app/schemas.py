@@ -48,6 +48,14 @@ class CampaignSummaryResponse(BaseModel):
     latest_sighting: Optional[datetime]
 
 
+# --- Confirmation ---
+
+class ConfirmationResponse(BaseModel):
+    sighting_id: str
+    confirmed_by: str
+    confirmed_at: datetime
+
+
 # --- Trainer ---
 
 class TrainerCreate(BaseModel):
