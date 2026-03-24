@@ -165,6 +165,7 @@ class PokemonResponse(BaseModel):
     is_baby: bool
     capture_rate: int
     evolution_chain_id: Optional[int]
+    is_caught: Optional[bool] = None
 
 
 class PokemonSearchResult(BaseModel):
@@ -222,6 +223,22 @@ class PaginatedSightingsResponse(BaseModel):
     limit: int
     offset: int
     items: list[SightingResponse]
+
+
+# --- Catch Tracking ---
+
+class CatchLogEntry(BaseModel):
+    pokemon_id: int
+    name: str
+    caught_at: datetime
+
+
+class CatchSummaryResponse(BaseModel):
+    total_caught: int
+    total_pokemon: int
+    completion_percentage: float
+    by_type: dict[str, int]
+    by_generation: dict[str, int]
 
 
 # --- Leaderboard ---

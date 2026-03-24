@@ -8,7 +8,7 @@ from typing import Optional, Any
 from datetime import datetime
 
 from app.database import engine, SessionLocal, Base
-from app.models import Campaign, Pokemon, Trainer, Ranger, Sighting
+from app.models import Campaign, Pokemon, Trainer, Ranger, Sighting, TrainerCatch
 from app.schemas import (
     CampaignCreate,
     CampaignResponse,
@@ -16,6 +16,8 @@ from app.schemas import (
     CampaignTransition,
     CampaignUpdate,
     Anomaly,
+    CatchLogEntry,
+    CatchSummaryResponse,
     ConfirmationResponse,
     LeaderboardEntry,
     LeaderboardResponse,
@@ -118,6 +120,118 @@ def get_trainer(trainer_id: str, db: Session = Depends(get_db)):
     return trainer
 
 
+# ---------- Trainer Catch Tracking ----------
+
+def _require_trainer_owner(trainer_id: str, x_user_id: Optional[str], db: Session):
+    """Validate that x_user_id is the trainer who owns this log. Returns the Trainer."""
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="X-User-ID header is required")
+    trainer = db.query(Trainer).filter(Trainer.id == trainer_id).first()
+    if not trainer:
+        raise HTTPException(status_code=404, detail="Trainer not found")
+    if x_user_id != trainer_id:
+        raise HTTPException(status_code=403, detail="You can only modify your own Pokédex")
+    return trainer
+
+
+@app.post("/trainers/{trainer_id}/pokedex/{pokemon_id}", response_model=CatchLogEntry)
+def mark_caught(
+    trainer_id: str,
+    pokemon_id: int,
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None),
+):
+    _require_trainer_owner(trainer_id, x_user_id, db)
+
+    pokemon = db.query(Pokemon).filter(Pokemon.id == pokemon_id).first()
+    if not pokemon:
+        raise HTTPException(status_code=404, detail="Pokémon not found")
+
+    existing = db.query(TrainerCatch).filter(
+        TrainerCatch.trainer_id == trainer_id,
+        TrainerCatch.pokemon_id == pokemon_id,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Pokémon already marked as caught")
+
+    catch = TrainerCatch(trainer_id=trainer_id, pokemon_id=pokemon_id)
+    db.add(catch)
+    db.commit()
+    db.refresh(catch)
+    return CatchLogEntry(pokemon_id=catch.pokemon_id, name=pokemon.name, caught_at=catch.caught_at)
+
+
+@app.delete("/trainers/{trainer_id}/pokedex/{pokemon_id}", response_model=MessageResponse)
+def unmark_caught(
+    trainer_id: str,
+    pokemon_id: int,
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None),
+):
+    _require_trainer_owner(trainer_id, x_user_id, db)
+
+    catch = db.query(TrainerCatch).filter(
+        TrainerCatch.trainer_id == trainer_id,
+        TrainerCatch.pokemon_id == pokemon_id,
+    ).first()
+    if not catch:
+        raise HTTPException(status_code=404, detail="Pokémon not in catch log")
+
+    db.delete(catch)
+    db.commit()
+    return MessageResponse(detail="Pokémon removed from catch log")
+
+
+@app.get("/trainers/{trainer_id}/pokedex/summary", response_model=CatchSummaryResponse)
+def get_catch_summary(trainer_id: str, db: Session = Depends(get_db)):
+    trainer = db.query(Trainer).filter(Trainer.id == trainer_id).first()
+    if not trainer:
+        raise HTTPException(status_code=404, detail="Trainer not found")
+
+    total_pokemon = db.query(func.count(Pokemon.id)).scalar() or 0
+
+    rows = (
+        db.query(Pokemon.type1, Pokemon.generation)
+        .join(TrainerCatch, TrainerCatch.pokemon_id == Pokemon.id)
+        .filter(TrainerCatch.trainer_id == trainer_id)
+        .all()
+    )
+
+    total_caught = len(rows)
+    by_type: dict[str, int] = defaultdict(int)
+    by_generation: dict[str, int] = defaultdict(int)
+    for row in rows:
+        by_type[row.type1] += 1
+        by_generation[str(row.generation)] += 1
+
+    completion_percentage = round(100.0 * total_caught / total_pokemon, 2) if total_pokemon else 0.0
+
+    return CatchSummaryResponse(
+        total_caught=total_caught,
+        total_pokemon=total_pokemon,
+        completion_percentage=completion_percentage,
+        by_type=dict(by_type),
+        by_generation=dict(by_generation),
+    )
+
+
+@app.get("/trainers/{trainer_id}/pokedex", response_model=list[CatchLogEntry])
+def get_catch_log(trainer_id: str, db: Session = Depends(get_db)):
+    trainer = db.query(Trainer).filter(Trainer.id == trainer_id).first()
+    if not trainer:
+        raise HTTPException(status_code=404, detail="Trainer not found")
+
+    rows = (
+        db.query(TrainerCatch, Pokemon)
+        .join(Pokemon, TrainerCatch.pokemon_id == Pokemon.id)
+        .filter(TrainerCatch.trainer_id == trainer_id)
+        .order_by(TrainerCatch.caught_at.desc())
+        .all()
+    )
+    return [CatchLogEntry(pokemon_id=tc.pokemon_id, name=p.name, caught_at=tc.caught_at)
+            for tc, p in rows]
+
+
 # ---------- Rangers ----------
 
 @app.post("/rangers", response_model=RangerResponse)
@@ -184,14 +298,28 @@ def search_pokemon(name: str = Query(..., min_length=1), db: Session = Depends(g
 
 
 @app.get("/pokedex/{pokemon_id_or_region}")
-def get_pokemon(pokemon_id_or_region: str, db: Session = Depends(get_db)):
+def get_pokemon(
+    pokemon_id_or_region: str,
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None),
+):
     # Check if it's a numeric ID
     try:
         pokemon_id = int(pokemon_id_or_region)
         pokemon = db.query(Pokemon).filter(Pokemon.id == pokemon_id).first()
         if not pokemon:
             raise HTTPException(status_code=404, detail="Pokémon not found")
-        return PokemonResponse.model_validate(pokemon)
+        resp = PokemonResponse.model_validate(pokemon)
+        # Personalize is_caught only for trainers (not rangers, not anonymous)
+        if x_user_id:
+            is_trainer = db.query(Trainer).filter(Trainer.id == x_user_id).first() is not None
+            if is_trainer:
+                caught = db.query(TrainerCatch).filter(
+                    TrainerCatch.trainer_id == x_user_id,
+                    TrainerCatch.pokemon_id == pokemon_id,
+                ).first()
+                resp.is_caught = caught is not None
+        return resp
     except ValueError:
         pass
 

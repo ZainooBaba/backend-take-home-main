@@ -78,6 +78,16 @@ class Campaign(Base):
     )
 
 
+class TrainerCatch(Base):
+    __tablename__ = "trainer_catches"
+
+    trainer_id: Mapped[str] = mapped_column(ForeignKey("trainers.id"), primary_key=True)
+    pokemon_id: Mapped[int] = mapped_column(ForeignKey("pokemon.id"), primary_key=True)
+    caught_at: Mapped[datetime] = mapped_column(
+        init=False, default_factory=datetime.utcnow, insert_default=datetime.utcnow,
+    )
+
+
 class Sighting(Base):
     __tablename__ = "sightings"
 
