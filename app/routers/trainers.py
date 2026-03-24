@@ -1,5 +1,3 @@
-from collections import defaultdict
-
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -108,20 +106,26 @@ def get_catch_summary(trainer_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Trainer not found")
 
     total_pokemon = db.query(func.count(Pokemon.id)).scalar() or 0
+    total_caught = (
+        db.query(func.count(TrainerCatch.pokemon_id))
+        .filter(TrainerCatch.trainer_id == trainer_id)
+        .scalar()
+    ) or 0
 
-    rows = (
-        db.query(Pokemon.type1, Pokemon.generation)
+    type_rows = (
+        db.query(Pokemon.type1, func.count(TrainerCatch.pokemon_id).label("cnt"))
         .join(TrainerCatch, TrainerCatch.pokemon_id == Pokemon.id)
         .filter(TrainerCatch.trainer_id == trainer_id)
+        .group_by(Pokemon.type1)
         .all()
     )
-
-    total_caught = len(rows)
-    by_type: dict[str, int] = defaultdict(int)
-    by_generation: dict[str, int] = defaultdict(int)
-    for row in rows:
-        by_type[row.type1] += 1
-        by_generation[str(row.generation)] += 1
+    gen_rows = (
+        db.query(Pokemon.generation, func.count(TrainerCatch.pokemon_id).label("cnt"))
+        .join(TrainerCatch, TrainerCatch.pokemon_id == Pokemon.id)
+        .filter(TrainerCatch.trainer_id == trainer_id)
+        .group_by(Pokemon.generation)
+        .all()
+    )
 
     completion_percentage = round(100.0 * total_caught / total_pokemon, 2) if total_pokemon else 0.0
 
@@ -129,8 +133,8 @@ def get_catch_summary(trainer_id: str, db: Session = Depends(get_db)):
         total_caught=total_caught,
         total_pokemon=total_pokemon,
         completion_percentage=completion_percentage,
-        by_type=dict(by_type),
-        by_generation=dict(by_generation),
+        by_type={row.type1: row.cnt for row in type_rows},
+        by_generation={str(row.generation): row.cnt for row in gen_rows},
     )
 
 
