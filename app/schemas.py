@@ -224,6 +224,31 @@ class PaginatedSightingsResponse(BaseModel):
     items: list[SightingResponse]
 
 
+# --- Leaderboard ---
+
+class RarestPokemon(BaseModel):
+    pokemon_id: int
+    name: str
+    tier: str
+
+
+class LeaderboardEntry(BaseModel):
+    rank: int
+    ranger_id: str
+    ranger_name: str
+    total_sightings: int
+    confirmed_sightings: int
+    unique_species: int
+    rarest_pokemon: Optional[RarestPokemon]
+
+
+class LeaderboardResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[LeaderboardEntry]
+
+
 # --- Generic ---
 
 class MessageResponse(BaseModel):
