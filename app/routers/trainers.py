@@ -30,7 +30,7 @@ def _require_trainer_owner(trainer_id: str, x_user_id: Optional[str], db: Sessio
     return trainer
 
 
-@router.post("/trainers", response_model=TrainerResponse)
+@router.post("/trainers", response_model=TrainerResponse, status_code=201)
 def create_trainer(trainer: TrainerCreate, db: Session = Depends(get_db)):
     new_trainer = Trainer(name=trainer.name, email=trainer.email)
     db.add(new_trainer)
@@ -52,6 +52,7 @@ def get_trainer(trainer_id: str, db: Session = Depends(get_db)):
 @router.post(
     "/trainers/{trainer_id}/pokedex/{pokemon_id}",
     response_model=CatchLogEntry,
+    status_code=201,
 )
 def mark_caught(
     trainer_id: str,

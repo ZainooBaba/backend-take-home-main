@@ -70,7 +70,7 @@ def list_sightings(
     return PaginatedSightingsResponse(total=total, limit=limit, offset=offset, items=items)
 
 
-@router.post("/sightings", response_model=SightingResponse)
+@router.post("/sightings", response_model=SightingResponse, status_code=201)
 def create_sighting(
     sighting: SightingCreate,
     db: Session = Depends(get_db),

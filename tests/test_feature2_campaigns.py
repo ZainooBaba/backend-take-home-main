@@ -55,7 +55,7 @@ class TestCandidateCampaignLifecycle:
     def test_campaign_starts_in_draft(self, client, sample_pokemon, sample_ranger):
         """A newly created campaign has status 'draft'."""
         resp = self._create_campaign(client, sample_ranger["id"])
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
         assert data["status"] == "draft"
         assert data["name"] == "Test Campaign"
@@ -106,7 +106,7 @@ class TestCandidateCampaignLifecycle:
         self._transition(client, cid, "active", rid)
 
         resp = self._create_sighting(client, rid, campaign_id=cid)
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         assert resp.json().get("campaign_id") == cid
 
     def test_sighting_rejected_for_draft_campaign(self, client, sample_pokemon, sample_ranger):

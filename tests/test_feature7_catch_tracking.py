@@ -13,7 +13,7 @@ class TestTrainerCatchTracking:
         """A trainer can mark a Pokémon as caught."""
         tid = sample_trainer["id"]
         resp = client.post(f"/trainers/{tid}/pokedex/25", headers={"X-User-ID": tid})
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
     def test_unmark_pokemon(self, client, sample_pokemon, sample_trainer):
         """A trainer can remove a Pokémon from their catch list."""

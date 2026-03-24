@@ -16,7 +16,7 @@ from app.services.sighting_service import enrich_sighting
 router = APIRouter(tags=["Rangers"])
 
 
-@router.post("/rangers", response_model=RangerResponse)
+@router.post("/rangers", response_model=RangerResponse, status_code=201)
 def create_ranger(ranger: RangerCreate, db: Session = Depends(get_db)):
     new_ranger = Ranger(
         name=ranger.name,

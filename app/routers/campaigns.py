@@ -17,7 +17,7 @@ router = APIRouter(tags=["Campaigns"])
 VALID_TRANSITIONS = {"draft": "active", "active": "completed", "completed": "archived"}
 
 
-@router.post("/campaigns", response_model=CampaignResponse)
+@router.post("/campaigns", response_model=CampaignResponse, status_code=201)
 def create_campaign(
     campaign: CampaignCreate,
     db: Session = Depends(get_db),

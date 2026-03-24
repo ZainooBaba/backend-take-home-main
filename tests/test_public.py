@@ -15,7 +15,7 @@ class TestTrainerRegistration:
             "name": "Trainer Red",
             "email": "red@pokemon-league.org",
         })
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["name"] == "Trainer Red"
         assert data["email"] == "red@pokemon-league.org"
@@ -38,7 +38,7 @@ class TestRangerRegistration:
             "email": "ash@pokemon-institute.org",
             "specialization": "Electric",
         })
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["name"] == "Ranger Ash"
         assert data["specialization"] == "Electric"
@@ -140,7 +140,7 @@ class TestSightings:
             },
             headers={"X-User-ID": sample_ranger["id"]},
         )
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["pokemon_id"] == 1
         assert data["region"] == "Kanto"
