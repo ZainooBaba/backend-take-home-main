@@ -198,7 +198,6 @@ def generate_sightings(db, pokemon_data, rangers, num_sightings=55000):
             weight=round(random.uniform(0.1, 999.0), 2),
             is_shiny=random.random() < 0.012,
             notes=random.choice(SIGHTING_NOTES),
-            is_confirmed=random.random() < 0.3,
         )
         sightings.append(sighting)
 
