@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -11,6 +11,12 @@ class CampaignCreate(BaseModel):
     region: str
     start_date: datetime
     end_date: datetime
+
+    @model_validator(mode="after")
+    def end_after_start(self) -> "CampaignCreate":
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+        return self
 
 
 class CampaignUpdate(BaseModel):
