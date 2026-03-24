@@ -1,5 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+
+
+def _utcnow() -> datetime:
+    """Return current UTC time as a naive datetime (timezone-stripped for SQLite compatibility)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,7 +42,7 @@ class Trainer(Base):
         primary_key=True, init=False, default_factory=generate_uuid, insert_default=generate_uuid,
     )
     created_at: Mapped[datetime] = mapped_column(
-        init=False, default_factory=datetime.utcnow, insert_default=datetime.utcnow,
+        init=False, default_factory=_utcnow, insert_default=_utcnow,
     )
 
 
@@ -51,7 +56,7 @@ class Ranger(Base):
         primary_key=True, init=False, default_factory=generate_uuid, insert_default=generate_uuid,
     )
     created_at: Mapped[datetime] = mapped_column(
-        init=False, default_factory=datetime.utcnow, insert_default=datetime.utcnow,
+        init=False, default_factory=_utcnow, insert_default=_utcnow,
     )
 
 
@@ -69,7 +74,7 @@ class Campaign(Base):
         primary_key=True, init=False, default_factory=generate_uuid, insert_default=generate_uuid,
     )
     created_at: Mapped[datetime] = mapped_column(
-        init=False, default_factory=datetime.utcnow, insert_default=datetime.utcnow,
+        init=False, default_factory=_utcnow, insert_default=_utcnow,
     )
 
     __table_args__ = (
@@ -84,7 +89,7 @@ class TrainerCatch(Base):
     trainer_id: Mapped[str] = mapped_column(ForeignKey("trainers.id"), primary_key=True)
     pokemon_id: Mapped[int] = mapped_column(ForeignKey("pokemon.id"), primary_key=True)
     caught_at: Mapped[datetime] = mapped_column(
-        init=False, default_factory=datetime.utcnow, insert_default=datetime.utcnow,
+        init=False, default_factory=_utcnow, insert_default=_utcnow,
     )
 
 

@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Header, Query, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import Integer, func
 from typing import Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import engine, SessionLocal, Base
 from app.models import Campaign, Pokemon, Trainer, Ranger, Sighting, TrainerCatch
@@ -909,7 +909,7 @@ def confirm_sighting(
 
     sighting.is_confirmed = True
     sighting.confirmed_by = x_user_id
-    sighting.confirmed_at = datetime.utcnow()
+    sighting.confirmed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(sighting)
 
