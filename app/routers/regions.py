@@ -1,7 +1,7 @@
 import math
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Integer, func
 from sqlalchemy.orm import Session
 
@@ -21,12 +21,20 @@ router = APIRouter(tags=["Regions"])
 
 
 @router.get("/regions/{region_name}/summary", response_model=RegionalSummaryResponse)
-def get_regional_summary(region_name: str, db: Session = Depends(get_db)):
+def get_regional_summary(
+    region_name: str,
+    db: Session = Depends(get_db),
+    confirmed_only: bool = Query(False, description="When true, only include confirmed sightings"),
+):
+    base_filter = [Sighting.region == region_name]
+    if confirmed_only:
+        base_filter.append(Sighting.confirmed_by.isnot(None))
+
     totals = db.query(
         func.count(Sighting.id),
         func.sum(Sighting.is_confirmed.cast(Integer)),
         func.count(Sighting.pokemon_id.distinct()),
-    ).filter(Sighting.region == region_name).one()
+    ).filter(*base_filter).one()
 
     total_sightings, confirmed_count, unique_species = totals
     total_sightings = total_sightings or 0
@@ -36,7 +44,7 @@ def get_regional_summary(region_name: str, db: Session = Depends(get_db)):
     top_poke_rows = (
         db.query(Pokemon.id, Pokemon.name, func.count(Sighting.id).label("cnt"))
         .join(Sighting, Sighting.pokemon_id == Pokemon.id)
-        .filter(Sighting.region == region_name)
+        .filter(*base_filter)
         .group_by(Pokemon.id, Pokemon.name)
         .order_by(func.count(Sighting.id).desc())
         .limit(5)
@@ -47,7 +55,7 @@ def get_regional_summary(region_name: str, db: Session = Depends(get_db)):
     top_ranger_rows = (
         db.query(Ranger.id, Ranger.name, func.count(Sighting.id).label("cnt"))
         .join(Sighting, Sighting.ranger_id == Ranger.id)
-        .filter(Sighting.region == region_name)
+        .filter(*base_filter)
         .group_by(Ranger.id, Ranger.name)
         .order_by(func.count(Sighting.id).desc())
         .limit(5)
@@ -57,7 +65,7 @@ def get_regional_summary(region_name: str, db: Session = Depends(get_db)):
 
     weather_rows = (
         db.query(Sighting.weather, func.count(Sighting.id))
-        .filter(Sighting.region == region_name)
+        .filter(*base_filter)
         .group_by(Sighting.weather)
         .all()
     )
@@ -65,7 +73,7 @@ def get_regional_summary(region_name: str, db: Session = Depends(get_db)):
 
     tod_rows = (
         db.query(Sighting.time_of_day, func.count(Sighting.id))
-        .filter(Sighting.region == region_name)
+        .filter(*base_filter)
         .group_by(Sighting.time_of_day)
         .all()
     )
@@ -85,7 +93,11 @@ def get_regional_summary(region_name: str, db: Session = Depends(get_db)):
 
 
 @router.get("/regions/{region_name}/analysis", response_model=RarityAnalysisResponse)
-def get_regional_analysis(region_name: str, db: Session = Depends(get_db)):
+def get_regional_analysis(
+    region_name: str,
+    db: Session = Depends(get_db),
+    confirmed_only: bool = Query(False, description="When true, only analyse confirmed sightings"),
+):
     """
     Rarity & encounter rate analysis for a region.
 
@@ -93,6 +105,10 @@ def get_regional_analysis(region_name: str, db: Session = Depends(get_db)):
     region. Python then buckets by rarity tier and runs a z-score anomaly
     check within each tier (see NOTES.md for reasoning).
     """
+    analysis_filter = [Sighting.region == region_name]
+    if confirmed_only:
+        analysis_filter.append(Sighting.confirmed_by.isnot(None))
+
     rows = (
         db.query(
             Pokemon.id,
@@ -103,7 +119,7 @@ def get_regional_analysis(region_name: str, db: Session = Depends(get_db)):
             func.count(Sighting.id).label("cnt"),
         )
         .join(Sighting, Sighting.pokemon_id == Pokemon.id)
-        .filter(Sighting.region == region_name)
+        .filter(*analysis_filter)
         .group_by(Pokemon.id)
         .all()
     )

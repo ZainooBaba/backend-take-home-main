@@ -30,6 +30,7 @@ def list_sightings(
     ranger_id: Optional[str] = Query(None, description="Filter by ranger UUID"),
     date_from: Optional[datetime] = Query(None, description="Start of date range (inclusive)"),
     date_to: Optional[datetime] = Query(None, description="End of date range (inclusive)"),
+    is_confirmed: Optional[bool] = Query(None, description="Filter by confirmation status"),
     limit: int = Query(20, ge=1, le=100, description="Page size"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
 ):
@@ -62,6 +63,12 @@ def list_sightings(
     if date_to is not None:
         query = query.filter(Sighting.date <= date_to)
         count_query = count_query.filter(Sighting.date <= date_to)
+    if is_confirmed is True:
+        query = query.filter(Sighting.confirmed_by.isnot(None))
+        count_query = count_query.filter(Sighting.confirmed_by.isnot(None))
+    elif is_confirmed is False:
+        query = query.filter(Sighting.confirmed_by.is_(None))
+        count_query = count_query.filter(Sighting.confirmed_by.is_(None))
 
     total = count_query.scalar()
     rows = query.order_by(Sighting.date.desc()).offset(offset).limit(limit).all()
