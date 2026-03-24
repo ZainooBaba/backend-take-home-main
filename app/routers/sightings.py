@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app.dependencies import get_db
+from app.dependencies import get_db, require_ranger
 from app.models import Campaign, Pokemon, Ranger, Sighting
 from app.schemas import (
     ConfirmationResponse,
@@ -73,15 +74,8 @@ def list_sightings(
 def create_sighting(
     sighting: SightingCreate,
     db: Session = Depends(get_db),
-    x_user_id: Optional[str] = Header(None),
+    ranger: Ranger = Depends(require_ranger),
 ):
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="X-User-ID header is required")
-
-    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
-    if not ranger:
-        raise HTTPException(status_code=403, detail="Only rangers can log sightings")
-
     pokemon = db.query(Pokemon).filter(Pokemon.id == sighting.pokemon_id).first()
     if not pokemon:
         raise HTTPException(status_code=404, detail="Pokémon not found")
@@ -97,7 +91,7 @@ def create_sighting(
 
     new_sighting = Sighting(
         pokemon_id=sighting.pokemon_id,
-        ranger_id=x_user_id,
+        ranger_id=ranger.id,
         region=sighting.region,
         route=sighting.route,
         date=sighting.date,
@@ -164,27 +158,20 @@ def delete_sighting(
 def confirm_sighting(
     sighting_id: str,
     db: Session = Depends(get_db),
-    x_user_id: Optional[str] = Header(None),
+    ranger: Ranger = Depends(require_ranger),
 ):
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="X-User-ID header is required")
-
-    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
-    if not ranger:
-        raise HTTPException(status_code=403, detail="Only rangers can confirm sightings")
-
     sighting = db.query(Sighting).filter(Sighting.id == sighting_id).first()
     if not sighting:
         raise HTTPException(status_code=404, detail="Sighting not found")
 
-    if sighting.ranger_id == x_user_id:
+    if sighting.ranger_id == ranger.id:
         raise HTTPException(status_code=403, detail="You cannot confirm your own sighting")
 
     if sighting.is_confirmed:
         raise HTTPException(status_code=409, detail="Sighting has already been confirmed")
 
     sighting.is_confirmed = True
-    sighting.confirmed_by = x_user_id
+    sighting.confirmed_by = ranger.id
     sighting.confirmed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(sighting)

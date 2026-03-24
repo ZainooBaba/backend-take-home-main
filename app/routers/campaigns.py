@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from typing import Optional
 
-from app.dependencies import get_db
+from app.dependencies import get_db, require_ranger
 from app.models import Campaign, Ranger, Sighting
 from app.schemas import (
     CampaignCreate,
@@ -22,13 +21,8 @@ VALID_TRANSITIONS = {"draft": "active", "active": "completed", "completed": "arc
 def create_campaign(
     campaign: CampaignCreate,
     db: Session = Depends(get_db),
-    x_user_id: Optional[str] = Header(None),
+    ranger: Ranger = Depends(require_ranger),
 ):
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="X-User-ID header is required")
-    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
-    if not ranger:
-        raise HTTPException(status_code=403, detail="Only rangers can create campaigns")
 
     new_campaign = Campaign(
         name=campaign.name,
@@ -36,7 +30,7 @@ def create_campaign(
         region=campaign.region,
         start_date=campaign.start_date,
         end_date=campaign.end_date,
-        created_by=x_user_id,
+        created_by=ranger.id,
     )
     db.add(new_campaign)
     db.commit()
@@ -57,14 +51,8 @@ def update_campaign(
     campaign_id: str,
     updates: CampaignUpdate,
     db: Session = Depends(get_db),
-    x_user_id: Optional[str] = Header(None),
+    ranger: Ranger = Depends(require_ranger),
 ):
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="X-User-ID header is required")
-    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
-    if not ranger:
-        raise HTTPException(status_code=403, detail="Only rangers can update campaigns")
-
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -82,14 +70,8 @@ def transition_campaign(
     campaign_id: str,
     body: CampaignTransition,
     db: Session = Depends(get_db),
-    x_user_id: Optional[str] = Header(None),
+    ranger: Ranger = Depends(require_ranger),
 ):
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="X-User-ID header is required")
-    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
-    if not ranger:
-        raise HTTPException(status_code=403, detail="Only rangers can transition campaigns")
-
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
