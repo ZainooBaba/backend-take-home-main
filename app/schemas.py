@@ -261,6 +261,7 @@ class RarestPokemon(BaseModel):
     pokemon_id: int
     name: str
     tier: str
+    is_shiny: bool
 
 
 class LeaderboardEntry(BaseModel):

@@ -88,22 +88,33 @@ def get_leaderboard(
             Pokemon.is_mythical,
             Pokemon.is_legendary,
             Pokemon.capture_rate,
+            func.max(Sighting.is_shiny.cast(Integer)).label("has_shiny"),
         )
         .join(Pokemon, Sighting.pokemon_id == Pokemon.id)
         .filter(Sighting.ranger_id.in_(ranger_ids), *filters)
-        .distinct()
+        .group_by(
+            Sighting.ranger_id,
+            Pokemon.id,
+            Pokemon.name,
+            Pokemon.is_mythical,
+            Pokemon.is_legendary,
+            Pokemon.capture_rate,
+        )
         .all()
     )
 
-    ranger_rarest: dict[str, tuple[int, RarestPokemon]] = {}
+    # Sort key: (rarity_priority, is_shiny) — shiny breaks ties within the same tier
+    ranger_rarest: dict[str, tuple[tuple[int, int], RarestPokemon]] = {}
     for row in pokemon_rows:
         priority = rarity_priority(row.is_mythical, row.is_legendary, row.capture_rate)
+        is_shiny_int = int(row.has_shiny or 0)
+        sort_key = (priority, is_shiny_int)
         existing = ranger_rarest.get(row.ranger_id)
-        if existing is None or priority > existing[0]:
+        if existing is None or sort_key > existing[0]:
             tier = rarity_tier(row.is_mythical, row.is_legendary, row.capture_rate)
             ranger_rarest[row.ranger_id] = (
-                priority,
-                RarestPokemon(pokemon_id=row.id, name=row.name, tier=tier),
+                sort_key,
+                RarestPokemon(pokemon_id=row.id, name=row.name, tier=tier, is_shiny=bool(row.has_shiny)),
             )
 
     items = [
