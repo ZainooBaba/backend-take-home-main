@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -21,6 +21,11 @@ class Pokemon(Base):
     is_baby: Mapped[bool] = mapped_column(default=False)
     type2: Mapped[Optional[str]] = mapped_column(default=None)
     evolution_chain_id: Mapped[Optional[int]] = mapped_column(default=None)
+
+    __table_args__ = (
+        Index("ix_pokemon_generation", "generation"),
+        Index("ix_pokemon_name", "name"),
+    )
 
 
 class Trainer(Base):
@@ -69,4 +74,15 @@ class Sighting(Base):
     is_confirmed: Mapped[bool] = mapped_column(default=False)
     id: Mapped[str] = mapped_column(
         primary_key=True, init=False, default_factory=generate_uuid, insert_default=generate_uuid,
+    )
+
+    __table_args__ = (
+        Index("ix_sighting_region", "region"),
+        Index("ix_sighting_pokemon_id", "pokemon_id"),
+        Index("ix_sighting_ranger_id", "ranger_id"),
+        Index("ix_sighting_date", "date"),
+        Index("ix_sighting_weather", "weather"),
+        Index("ix_sighting_time_of_day", "time_of_day"),
+        Index("ix_sighting_region_pokemon", "region", "pokemon_id"),
+        Index("ix_sighting_region_date", "region", "date"),
     )

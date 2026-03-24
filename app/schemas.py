@@ -109,6 +109,14 @@ class SightingResponse(BaseModel):
     ranger_name: Optional[str] = None
 
 
+class PaginatedSightingsResponse(BaseModel):
+    """Paginated response wrapper for the GET /sightings endpoint."""
+    total: int
+    limit: int
+    offset: int
+    items: list[SightingResponse]
+
+
 # --- Generic ---
 
 class MessageResponse(BaseModel):

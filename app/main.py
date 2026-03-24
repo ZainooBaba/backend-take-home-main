@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Header, Query, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import Optional, Any
 from datetime import datetime
 
@@ -16,11 +17,12 @@ from app.schemas import (
     SightingResponse,
     UserLookupResponse,
     MessageResponse,
+    PaginatedSightingsResponse,
 )
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Endeavor PokéTracker", version="0.0.1")
+app = FastAPI(title="Endeavor PokéTracker", version="0.1.0")
 
 
 # ---------- helpers ----------
@@ -39,6 +41,14 @@ REGION_TO_GENERATION = {
     "hoenn": 3,
     "sinnoh": 4,
 }
+
+
+def _enrich_sighting(sighting: Sighting, pokemon: Pokemon, ranger: Ranger) -> SightingResponse:
+    """Build a SightingResponse from ORM objects without extra queries."""
+    resp = SightingResponse.model_validate(sighting)
+    resp.pokemon_name = pokemon.name if pokemon else None
+    resp.ranger_name = ranger.name if ranger else None
+    return resp
 
 
 # ---------- Trainers ----------
@@ -88,15 +98,15 @@ def get_ranger_sightings(ranger_id: str, db: Session = Depends(get_db)):
     ranger = db.query(Ranger).filter(Ranger.id == ranger_id).first()
     if not ranger:
         raise HTTPException(status_code=404, detail="Ranger not found")
-    sightings = db.query(Sighting).filter(Sighting.ranger_id == ranger_id).all()
-    result = []
-    for s in sightings:
-        pokemon = db.query(Pokemon).filter(Pokemon.id == s.pokemon_id).first()
-        resp = SightingResponse.model_validate(s)
-        resp.pokemon_name = pokemon.name if pokemon else None
-        resp.ranger_name = ranger.name
-        result.append(resp)
-    return result
+
+    # Use a JOIN instead of N+1 queries
+    rows = (
+        db.query(Sighting, Pokemon)
+        .join(Pokemon, Sighting.pokemon_id == Pokemon.id)
+        .filter(Sighting.ranger_id == ranger_id)
+        .all()
+    )
+    return [_enrich_sighting(s, p, ranger) for s, p in rows]
 
 
 # ---------- User Lookup ----------
@@ -152,6 +162,76 @@ def get_pokemon(pokemon_id_or_region: str, db: Session = Depends(get_db)):
 
 # ---------- Sightings ----------
 
+@app.get("/sightings", response_model=PaginatedSightingsResponse)
+def list_sightings(
+    db: Session = Depends(get_db),
+    pokemon_id: Optional[int] = Query(None, description="Filter by Pokémon species ID"),
+    region: Optional[str] = Query(None, description="Filter by region name"),
+    weather: Optional[str] = Query(None, description="Filter by weather condition"),
+    time_of_day: Optional[str] = Query(None, description="Filter by time of day"),
+    ranger_id: Optional[str] = Query(None, description="Filter by ranger UUID"),
+    date_from: Optional[datetime] = Query(None, description="Start of date range (inclusive)"),
+    date_to: Optional[datetime] = Query(None, description="End of date range (inclusive)"),
+    limit: int = Query(20, ge=1, le=100, description="Page size"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+):
+    """
+    List sightings with optional filters and pagination.
+    Returns total matching count alongside the page of results.
+    """
+    # Base query with JOINs to avoid N+1
+    query = (
+        db.query(Sighting, Pokemon, Ranger)
+        .join(Pokemon, Sighting.pokemon_id == Pokemon.id)
+        .join(Ranger, Sighting.ranger_id == Ranger.id)
+    )
+
+    # Also build a count query on Sighting only (faster than counting joined rows)
+    count_query = db.query(func.count(Sighting.id))
+
+    # Apply filters to both queries
+    if pokemon_id is not None:
+        query = query.filter(Sighting.pokemon_id == pokemon_id)
+        count_query = count_query.filter(Sighting.pokemon_id == pokemon_id)
+    if region is not None:
+        query = query.filter(Sighting.region == region)
+        count_query = count_query.filter(Sighting.region == region)
+    if weather is not None:
+        query = query.filter(Sighting.weather == weather)
+        count_query = count_query.filter(Sighting.weather == weather)
+    if time_of_day is not None:
+        query = query.filter(Sighting.time_of_day == time_of_day)
+        count_query = count_query.filter(Sighting.time_of_day == time_of_day)
+    if ranger_id is not None:
+        query = query.filter(Sighting.ranger_id == ranger_id)
+        count_query = count_query.filter(Sighting.ranger_id == ranger_id)
+    if date_from is not None:
+        query = query.filter(Sighting.date >= date_from)
+        count_query = count_query.filter(Sighting.date >= date_from)
+    if date_to is not None:
+        query = query.filter(Sighting.date <= date_to)
+        count_query = count_query.filter(Sighting.date <= date_to)
+
+    total = count_query.scalar()
+
+    rows = (
+        query
+        .order_by(Sighting.date.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    items = [_enrich_sighting(s, p, r) for s, p, r in rows]
+
+    return PaginatedSightingsResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=items,
+    )
+
+
 @app.post("/sightings", response_model=SightingResponse)
 def create_sighting(
     sighting: SightingCreate,
@@ -190,25 +270,23 @@ def create_sighting(
     db.commit()
     db.refresh(new_sighting)
 
-    resp = SightingResponse.model_validate(new_sighting)
-    resp.pokemon_name = pokemon.name
-    resp.ranger_name = ranger.name
-    return resp
+    return _enrich_sighting(new_sighting, pokemon, ranger)
 
 
 @app.get("/sightings/{sighting_id}", response_model=SightingResponse)
 def get_sighting(sighting_id: str, db: Session = Depends(get_db)):
-    sighting = db.query(Sighting).filter(Sighting.id == sighting_id).first()
-    if not sighting:
+    row = (
+        db.query(Sighting, Pokemon, Ranger)
+        .join(Pokemon, Sighting.pokemon_id == Pokemon.id)
+        .join(Ranger, Sighting.ranger_id == Ranger.id)
+        .filter(Sighting.id == sighting_id)
+        .first()
+    )
+    if not row:
         raise HTTPException(status_code=404, detail="Sighting not found")
 
-    pokemon = db.query(Pokemon).filter(Pokemon.id == sighting.pokemon_id).first()
-    ranger = db.query(Ranger).filter(Ranger.id == sighting.ranger_id).first()
-
-    resp = SightingResponse.model_validate(sighting)
-    resp.pokemon_name = pokemon.name if pokemon else None
-    resp.ranger_name = ranger.name if ranger else None
-    return resp
+    sighting, pokemon, ranger = row
+    return _enrich_sighting(sighting, pokemon, ranger)
 
 
 @app.delete("/sightings/{sighting_id}", response_model=MessageResponse)
