@@ -15,6 +15,7 @@ from app.schemas import (
     SightingCreate,
     SightingResponse,
 )
+from app.services.cache import leaderboard_cache
 from app.services.sighting_service import enrich_sighting
 
 router = APIRouter(tags=["Sightings"])
@@ -123,6 +124,7 @@ def create_sighting(
     db.add(new_sighting)
     db.commit()
     db.refresh(new_sighting)
+    leaderboard_cache.invalidate()  # new sighting changes ranger totals
     return enrich_sighting(new_sighting, pokemon, ranger)
 
 
@@ -166,6 +168,7 @@ def delete_sighting(
 
     db.delete(sighting)
     db.commit()
+    leaderboard_cache.invalidate()  # ranger totals changed
     return MessageResponse(detail="Sighting deleted")
 
 
@@ -189,6 +192,7 @@ def confirm_sighting(
     sighting.confirmed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(sighting)
+    leaderboard_cache.invalidate()  # confirmed count changed
 
     pokemon = db.query(Pokemon).filter(Pokemon.id == sighting.pokemon_id).first()
     reporter = db.query(Ranger).filter(Ranger.id == sighting.ranger_id).first()

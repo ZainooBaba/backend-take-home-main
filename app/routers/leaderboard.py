@@ -7,6 +7,7 @@ from typing import Optional
 from app.dependencies import get_db
 from app.models import Pokemon, Ranger, Sighting
 from app.schemas import LeaderboardEntry, LeaderboardResponse, RarestPokemon
+from app.services.cache import leaderboard_cache
 from app.services.rarity import rarity_priority, rarity_tier
 
 router = APIRouter(tags=["Leaderboard"])
@@ -44,6 +45,12 @@ def get_leaderboard(
             status_code=400,
             detail=f"Invalid sort_by '{sort_by}'. Choose from: {', '.join(_LEADERBOARD_SORT)}",
         )
+
+    # Return cached result if still fresh (TTL = 60 s)
+    cache_key = f"{region}:{date_from}:{date_to}:{campaign_id}:{sort_by}:{limit}:{offset}"
+    cached = leaderboard_cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     filters = []
     if region is not None:
@@ -130,4 +137,6 @@ def get_leaderboard(
         for i, row in enumerate(agg_rows)
     ]
 
-    return LeaderboardResponse(total=total, limit=limit, offset=offset, items=items)
+    result = LeaderboardResponse(total=total, limit=limit, offset=offset, items=items)
+    leaderboard_cache.set(cache_key, result)
+    return result
