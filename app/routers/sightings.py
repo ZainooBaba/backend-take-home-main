@@ -88,6 +88,14 @@ def create_sighting(
             raise HTTPException(
                 status_code=400, detail="Sightings can only be added to active campaigns"
             )
+        if campaign.region != sighting.region:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Sighting region '{sighting.region}' does not match "
+                    f"campaign region '{campaign.region}'"
+                ),
+            )
 
     new_sighting = Sighting(
         pokemon_id=sighting.pokemon_id,
