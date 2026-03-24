@@ -12,9 +12,13 @@ import random
 import uuid
 import os
 import sys
+from datetime import datetime
 
-from database import engine, SessionLocal, Base
-from models import Pokemon, Ranger, Sighting
+# Fix import path: add project root to sys.path so `app.*` resolves
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from app.database import engine, SessionLocal, Base
+from app.models import Pokemon, Ranger, Sighting
 
 random.seed(42)
 
@@ -135,7 +139,7 @@ SIGHTING_NOTES = [
 
 
 def load_pokedex_data():
-    data_path = os.path.join(os.path.dirname(__file__), "..", "data", "pokedex.json")
+    data_path = os.path.join(os.path.dirname(__file__), "..", "data", "pokedex_entries.json")
     with open(data_path) as f:
         return json.load(f)
 
@@ -145,11 +149,9 @@ def get_pokemon_for_region(all_pokemon, region_name):
     region_gen = {"Kanto": 1, "Johto": 2, "Hoenn": 3, "Sinnoh": 4}
     gen = region_gen[region_name]
 
-    # Primarily regional pokemon, with some from other gens
     regional = [p for p in all_pokemon if p["generation"] == gen]
     others = [p for p in all_pokemon if p["generation"] != gen]
 
-    # 80% regional, 20% crossover
     crossover_count = max(10, len(regional) // 4)
     crossover = random.sample(others, min(crossover_count, len(others)))
 
@@ -160,12 +162,10 @@ def generate_sightings(db, pokemon_data, rangers, num_sightings=55000):
     """Generate sighting records across all regions."""
     print(f"Generating {num_sightings} sighting records...")
 
-    # Distribution of sightings per region (Kanto gets the most)
     region_weights = {"Kanto": 0.30, "Johto": 0.25, "Hoenn": 0.25, "Sinnoh": 0.20}
 
     sightings = []
     for i in range(num_sightings):
-        # Pick region based on weights
         region = random.choices(
             list(region_weights.keys()),
             weights=list(region_weights.values()),
@@ -180,7 +180,6 @@ def generate_sightings(db, pokemon_data, rangers, num_sightings=55000):
 
         ranger = random.choice(rangers)
 
-        # Generate a date in 2024-2025
         year = random.choice([2024, 2025])
         month = random.randint(1, 12)
         day = random.randint(1, 28)
@@ -188,8 +187,7 @@ def generate_sightings(db, pokemon_data, rangers, num_sightings=55000):
         minute = random.randint(0, 59)
 
         sighting = Sighting(
-            id=str(uuid.uuid4()),
-            pokemon_name=pokemon["name"],
+            pokemon_id=pokemon["id"],
             ranger_id=ranger.id,
             region=region,
             route=route,
@@ -200,7 +198,7 @@ def generate_sightings(db, pokemon_data, rangers, num_sightings=55000):
             weight=round(random.uniform(0.1, 999.0), 2),
             is_shiny=random.random() < 0.012,
             notes=random.choice(SIGHTING_NOTES),
-            confirmed=random.random() < 0.3,
+            is_confirmed=random.random() < 0.3,
         )
         sightings.append(sighting)
 
@@ -234,17 +232,18 @@ def seed_database():
     print(f"  Found {len(pokemon_data)} species in data file.")
 
     # Insert Pokémon
+    # Bug fix #3: "species_name" -> "name" (model field is `name`, not `species_name`)
     for entry in pokemon_data:
         pokemon = Pokemon(
             id=entry["id"],
-            species_name=entry["name"],
+            name=entry["name"],
             type1=entry["type1"],
             type2=entry["type2"],
             generation=entry["generation"],
+            capture_rate=entry["capture_rate"],
             is_legendary=entry["is_legendary"],
             is_mythical=entry["is_mythical"],
             is_baby=entry["is_baby"],
-            capture_rate=entry["capture_rate"],
             evolution_chain_id=entry.get("evolution_chain_id"),
         )
         db.add(pokemon)
@@ -256,8 +255,8 @@ def seed_database():
     print("Creating ranger profiles...")
     rangers = []
     for rd in RANGER_DATA:
+        # Bug fix #5: removed "id=str(uuid.uuid4())" — Ranger model auto-generates id (init=False)
         ranger = Ranger(
-            id=str(uuid.uuid4()),
             name=rd["name"],
             email=rd["email"],
             specialization=rd["specialization"],

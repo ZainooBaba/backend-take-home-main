@@ -211,3 +211,6 @@ __marimo__/
 # Internal
 interviewer_notes.md
 tests/test_private.py
+
+#other
+uv.lock
