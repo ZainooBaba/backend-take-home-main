@@ -5,7 +5,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
-from app.main import app, get_db
+from app.dependencies import get_db
+from app.main import app
 
 
 @pytest.fixture(scope="function")

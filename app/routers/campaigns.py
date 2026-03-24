@@ -1,0 +1,131 @@
+from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+from typing import Optional
+
+from app.dependencies import get_db
+from app.models import Campaign, Ranger, Sighting
+from app.schemas import (
+    CampaignCreate,
+    CampaignResponse,
+    CampaignSummaryResponse,
+    CampaignTransition,
+    CampaignUpdate,
+)
+
+router = APIRouter(tags=["Campaigns"])
+
+VALID_TRANSITIONS = {"draft": "active", "active": "completed", "completed": "archived"}
+
+
+@router.post("/campaigns", response_model=CampaignResponse)
+def create_campaign(
+    campaign: CampaignCreate,
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="X-User-ID header is required")
+    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
+    if not ranger:
+        raise HTTPException(status_code=403, detail="Only rangers can create campaigns")
+
+    new_campaign = Campaign(
+        name=campaign.name,
+        description=campaign.description,
+        region=campaign.region,
+        start_date=campaign.start_date,
+        end_date=campaign.end_date,
+        created_by=x_user_id,
+    )
+    db.add(new_campaign)
+    db.commit()
+    db.refresh(new_campaign)
+    return new_campaign
+
+
+@router.get("/campaigns/{campaign_id}", response_model=CampaignResponse)
+def get_campaign(campaign_id: str, db: Session = Depends(get_db)):
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return campaign
+
+
+@router.patch("/campaigns/{campaign_id}", response_model=CampaignResponse)
+def update_campaign(
+    campaign_id: str,
+    updates: CampaignUpdate,
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="X-User-ID header is required")
+    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
+    if not ranger:
+        raise HTTPException(status_code=403, detail="Only rangers can update campaigns")
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    for field, value in updates.model_dump(exclude_none=True).items():
+        setattr(campaign, field, value)
+
+    db.commit()
+    db.refresh(campaign)
+    return campaign
+
+
+@router.post("/campaigns/{campaign_id}/transition", response_model=CampaignResponse)
+def transition_campaign(
+    campaign_id: str,
+    body: CampaignTransition,
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="X-User-ID header is required")
+    ranger = db.query(Ranger).filter(Ranger.id == x_user_id).first()
+    if not ranger:
+        raise HTTPException(status_code=403, detail="Only rangers can transition campaigns")
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    if VALID_TRANSITIONS.get(campaign.status) != body.status:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot transition from '{campaign.status}' to '{body.status}'",
+        )
+
+    campaign.status = body.status
+    db.commit()
+    db.refresh(campaign)
+    return campaign
+
+
+@router.get("/campaigns/{campaign_id}/summary", response_model=CampaignSummaryResponse)
+def get_campaign_summary(campaign_id: str, db: Session = Depends(get_db)):
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    row = db.query(
+        func.count(Sighting.id),
+        func.count(Sighting.pokemon_id.distinct()),
+        func.count(Sighting.ranger_id.distinct()),
+        func.min(Sighting.date),
+        func.max(Sighting.date),
+    ).filter(Sighting.campaign_id == campaign_id).one()
+
+    total, unique_species, contributing_rangers, earliest, latest = row
+    return CampaignSummaryResponse(
+        campaign_id=campaign_id,
+        total_sightings=total,
+        unique_species=unique_species,
+        contributing_rangers=contributing_rangers,
+        earliest_sighting=earliest,
+        latest_sighting=latest,
+    )
