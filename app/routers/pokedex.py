@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.dependencies import get_db
 from app.models import Pokemon, Trainer, TrainerCatch
-from app.schemas import PokemonResponse, PokemonSearchResult
+from app.schemas import PaginatedPokedexResponse, PokemonResponse, PokemonSearchResult
 
 router = APIRouter(tags=["Pokédex"])
 
@@ -16,9 +17,15 @@ REGION_TO_GENERATION = {
 }
 
 
-@router.get("/pokedex", response_model=list[PokemonResponse])
-def list_pokemon(db: Session = Depends(get_db)):
-    return db.query(Pokemon).all()
+@router.get("/pokedex", response_model=PaginatedPokedexResponse)
+def list_pokemon(
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100, description="Page size"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+):
+    total = db.query(func.count(Pokemon.id)).scalar()
+    items = db.query(Pokemon).order_by(Pokemon.id).offset(offset).limit(limit).all()
+    return PaginatedPokedexResponse(total=total, limit=limit, offset=offset, items=items)
 
 
 @router.get("/pokedex/search", response_model=list[PokemonSearchResult])

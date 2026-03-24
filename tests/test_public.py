@@ -87,7 +87,9 @@ class TestPokedex:
         response = client.get("/pokedex")
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == len(sample_pokemon)
+        # Response is now paginated; check via the items list and total count
+        items = data.get("items", data) if isinstance(data, dict) else data
+        assert len(items) == len(sample_pokemon)
 
     def test_get_pokemon_by_id(self, client, sample_pokemon):
         response = client.get("/pokedex/25")
@@ -211,8 +213,10 @@ class TestRangerSightings:
         response = client.get(f"/rangers/{sample_ranger['id']}/sightings")
         assert response.status_code == 200
         data = response.json()
-        assert len(data) >= 1
-        assert data[0]["ranger_id"] == sample_ranger["id"]
+        # Response is now paginated
+        items = data.get("items", data) if isinstance(data, dict) else data
+        assert len(items) >= 1
+        assert items[0]["ranger_id"] == sample_ranger["id"]
 
     def test_get_ranger_sightings_not_found(self, client):
         response = client.get("/rangers/nonexistent-uuid/sightings")

@@ -231,6 +231,14 @@ class PaginatedSightingsResponse(BaseModel):
     items: list[SightingResponse]
 
 
+class PaginatedPokedexResponse(BaseModel):
+    """Paginated response wrapper for the GET /pokedex endpoint."""
+    total: int
+    limit: int
+    offset: int
+    items: list[PokemonResponse]
+
+
 # --- Catch Tracking ---
 
 class CatchLogEntry(BaseModel):
