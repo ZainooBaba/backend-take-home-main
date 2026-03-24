@@ -48,6 +48,38 @@ class CampaignSummaryResponse(BaseModel):
     latest_sighting: Optional[datetime]
 
 
+# --- Rarity Analysis ---
+
+class SpeciesCount(BaseModel):
+    pokemon_id: int
+    name: str
+    count: int
+
+
+class TierBreakdown(BaseModel):
+    tier: str
+    count: int
+    percentage: float
+    species: list[SpeciesCount]
+
+
+class Anomaly(BaseModel):
+    pokemon_id: int
+    name: str
+    tier: str
+    count: int
+    tier_mean: float
+    z_score: float
+    reason: str
+
+
+class RarityAnalysisResponse(BaseModel):
+    region: str
+    total_sightings: int
+    tiers: list[TierBreakdown]
+    anomalies: list[Anomaly]
+
+
 # --- Regional Summary ---
 
 class TopEntry(BaseModel):

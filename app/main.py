@@ -1,3 +1,6 @@
+import math
+from collections import defaultdict
+
 from fastapi import FastAPI, HTTPException, Header, Query, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import Integer, func
@@ -12,8 +15,12 @@ from app.schemas import (
     CampaignSummaryResponse,
     CampaignTransition,
     CampaignUpdate,
+    Anomaly,
     ConfirmationResponse,
+    RarityAnalysisResponse,
     RegionalSummaryResponse,
+    SpeciesCount,
+    TierBreakdown,
     TopEntry,
     TrainerCreate,
     TrainerResponse,
@@ -44,6 +51,21 @@ def get_db():
 
 
 VALID_TRANSITIONS = {"draft": "active", "active": "completed", "completed": "archived"}
+
+# Rarity tier ordering (highest → lowest) used for analysis
+TIER_ORDER = ["mythical", "legendary", "rare", "uncommon", "common"]
+
+
+def _rarity_tier(is_mythical: bool, is_legendary: bool, capture_rate: int) -> str:
+    if is_mythical:
+        return "mythical"
+    if is_legendary:
+        return "legendary"
+    if capture_rate < 75:
+        return "rare"
+    if capture_rate < 150:
+        return "uncommon"
+    return "common"
 
 REGION_TO_GENERATION = {
     "kanto": 1,
@@ -517,6 +539,85 @@ def get_regional_summary(region_name: str, db: Session = Depends(get_db)):
         top_rangers=top_rangers,
         by_weather=by_weather,
         by_time_of_day=by_time_of_day,
+    )
+
+
+@app.get("/regions/{region_name}/analysis", response_model=RarityAnalysisResponse)
+def get_regional_analysis(region_name: str, db: Session = Depends(get_db)):
+    """
+    Rarity & encounter rate analysis for a region.
+
+    A single JOIN query retrieves all (pokemon, sighting_count) pairs for the
+    region. Python then buckets by rarity tier and runs a z-score anomaly
+    check within each tier (see NOTES.md for reasoning).
+    """
+    rows = (
+        db.query(
+            Pokemon.id,
+            Pokemon.name,
+            Pokemon.capture_rate,
+            Pokemon.is_legendary,
+            Pokemon.is_mythical,
+            func.count(Sighting.id).label("cnt"),
+        )
+        .join(Sighting, Sighting.pokemon_id == Pokemon.id)
+        .filter(Sighting.region == region_name)
+        .group_by(Pokemon.id)
+        .all()
+    )
+
+    total_sightings = sum(r.cnt for r in rows)
+
+    # Bucket species into tiers
+    tier_species: dict[str, list[SpeciesCount]] = defaultdict(list)
+    for r in rows:
+        tier = _rarity_tier(r.is_mythical, r.is_legendary, r.capture_rate)
+        tier_species[tier].append(SpeciesCount(pokemon_id=r.id, name=r.name, count=r.cnt))
+
+    # Build ordered tier breakdown
+    tiers: list[TierBreakdown] = []
+    for tier_name in TIER_ORDER:
+        species_list = tier_species.get(tier_name)
+        if not species_list:
+            continue
+        tier_count = sum(s.count for s in species_list)
+        percentage = round(100.0 * tier_count / total_sightings, 2) if total_sightings else 0.0
+        tiers.append(TierBreakdown(
+            tier=tier_name,
+            count=tier_count,
+            percentage=percentage,
+            species=sorted(species_list, key=lambda s: -s.count),
+        ))
+
+    # Anomaly detection: z-score within tier (see NOTES.md)
+    anomalies: list[Anomaly] = []
+    for tier in tiers:
+        if len(tier.species) < 2:
+            continue
+        counts = [s.count for s in tier.species]
+        mean = sum(counts) / len(counts)
+        variance = sum((c - mean) ** 2 for c in counts) / len(counts)
+        stdev = math.sqrt(variance)
+        if stdev == 0:
+            continue
+        for s in tier.species:
+            z = (s.count - mean) / stdev
+            if abs(z) >= 2.0:
+                anomalies.append(Anomaly(
+                    pokemon_id=s.pokemon_id,
+                    name=s.name,
+                    tier=tier.tier,
+                    count=s.count,
+                    tier_mean=round(mean, 2),
+                    z_score=round(z, 2),
+                    reason="over-represented" if z > 0 else "under-represented",
+                ))
+
+    return RarityAnalysisResponse(
+        region=region_name,
+        total_sightings=total_sightings,
+        tiers=tiers,
+        anomalies=anomalies,
     )
 
 
