@@ -105,7 +105,8 @@ def get_catch_summary(trainer_id: str, db: Session = Depends(get_db)):
     if not trainer:
         raise HTTPException(status_code=404, detail="Trainer not found")
 
-    total_pokemon = db.query(func.count(Pokemon.id)).scalar() or 0
+    TOTAL_POKEMON = 493  # Fixed Pokédex size: Generations I–IV
+    total_pokemon = TOTAL_POKEMON
     total_caught = (
         db.query(func.count(TrainerCatch.pokemon_id))
         .filter(TrainerCatch.trainer_id == trainer_id)
