@@ -33,39 +33,40 @@ def search_pokemon(name: str = Query(..., min_length=1), db: Session = Depends(g
     return db.query(Pokemon).filter(Pokemon.name.ilike(f"{name}%")).all()
 
 
-@router.get("/pokedex/{pokemon_id_or_region}")
-def get_pokemon(
-    pokemon_id_or_region: str,
+@router.get("/pokedex/{pokemon_id}", response_model=PokemonResponse)
+def get_pokemon_by_id(
+    pokemon_id: int,
     db: Session = Depends(get_db),
     x_user_id: Optional[str] = Header(None),
 ):
-    # Numeric ID → single Pokémon
-    try:
-        pokemon_id = int(pokemon_id_or_region)
-        pokemon = db.query(Pokemon).filter(Pokemon.id == pokemon_id).first()
-        if not pokemon:
-            raise HTTPException(status_code=404, detail="Pokémon not found")
-        resp = PokemonResponse.model_validate(pokemon)
-        if x_user_id:
-            is_trainer = db.query(Trainer).filter(Trainer.id == x_user_id).first() is not None
-            if is_trainer:
-                caught = db.query(TrainerCatch).filter(
-                    TrainerCatch.trainer_id == x_user_id,
-                    TrainerCatch.pokemon_id == pokemon_id,
-                ).first()
-                resp.is_caught = caught is not None
-        return resp
-    except ValueError:
-        pass
+    """Fetch a single Pokémon by numeric ID. Includes is_caught when called by a trainer."""
+    pokemon = db.query(Pokemon).filter(Pokemon.id == pokemon_id).first()
+    if not pokemon:
+        raise HTTPException(status_code=404, detail="Pokémon not found")
+    resp = PokemonResponse.model_validate(pokemon)
+    if x_user_id:
+        is_trainer = db.query(Trainer).filter(Trainer.id == x_user_id).first() is not None
+        if is_trainer:
+            caught = db.query(TrainerCatch).filter(
+                TrainerCatch.trainer_id == x_user_id,
+                TrainerCatch.pokemon_id == pokemon_id,
+            ).first()
+            resp.is_caught = caught is not None
+    return resp
 
-    # Region name or generation number → list of Pokémon
-    region_lower = pokemon_id_or_region.lower()
+
+@router.get("/pokedex/region/{region_name}", response_model=list[PokemonResponse])
+def get_pokemon_by_region(region_name: str, db: Session = Depends(get_db)):
+    """List all Pokémon native to a region (by name or generation number)."""
+    region_lower = region_name.lower()
     generation = REGION_TO_GENERATION.get(region_lower)
     if generation is None:
         try:
-            generation = int(pokemon_id_or_region)
+            generation = int(region_name)
         except ValueError:
-            raise HTTPException(status_code=404, detail="Invalid Pokémon ID or region name")
-
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown region '{region_name}'. Valid names: {', '.join(REGION_TO_GENERATION)}",
+            )
     return [PokemonResponse.model_validate(p) for p in
             db.query(Pokemon).filter(Pokemon.generation == generation).all()]

@@ -103,7 +103,7 @@ class TestPokedex:
         assert response.status_code == 404
 
     def test_get_pokemon_by_region(self, client, sample_pokemon):
-        response = client.get("/pokedex/kanto")
+        response = client.get("/pokedex/region/kanto")
         assert response.status_code == 200
         data = response.json()
         assert len(data) > 0
